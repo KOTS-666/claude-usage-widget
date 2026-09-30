@@ -3,6 +3,8 @@
 Reads the OAuth token that Claude Code stores in ~/.claude/.credentials.json
 and polls the usage endpoint. It sends no model requests, so it spends no tokens.
 Stdlib only: run with pythonw widget.pyw
+
+Idea and development: KOTS-666 (https://github.com/KOTS-666), built with Claude.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -15,6 +17,7 @@ import time
 import tkinter as tk
 import urllib.error
 import urllib.request
+import webbrowser
 from datetime import datetime, timezone
 
 CREDS = os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")
@@ -30,6 +33,8 @@ STARTUP_VBS = os.path.join(
     r"Microsoft\Windows\Start Menu\Programs\Startup\claude_usage_widget.vbs",
 )
 URL = "https://api.anthropic.com/api/oauth/usage"
+AUTHOR = "KOTS-666"
+HOMEPAGE = "https://github.com/KOTS-666/claude-usage-widget"
 POLL_MS = 3 * 60 * 1000
 BACKOFF_MIN = (5, 10, 20, 30)  # minutes to wait after consecutive HTTP 429
 
@@ -192,6 +197,8 @@ class Widget:
         self.menu.add_checkbutton(label="Запускать с Windows", variable=self.autostart,
                                   command=self.toggle_autostart)
         self.menu.add_separator()
+        self.menu.add_command(label=f"Автор: {AUTHOR} — GitHub",
+                              command=lambda: webbrowser.open(HOMEPAGE))
         self.menu.add_command(label="Закрыть", command=self.quit)
 
         self.canvas.bind("<ButtonPress-1>", self.drag_start)

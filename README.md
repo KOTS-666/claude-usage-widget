@@ -1,5 +1,7 @@
 # Claude Usage Widget
 
+**Автор идеи и разработки — [KOTS-666](https://github.com/KOTS-666)** (написано при помощи Claude).
+
 Маленький виджет для панели задач Windows 10/11: показывает, сколько израсходовано
 лимитов Claude — 5-часового и недельного — и когда они сбросятся.
 
@@ -10,7 +12,8 @@
 - **Токены не тратит**: запрашивает только статистику лимитов, к модели не обращается.
 - Обновляется раз в 3 минуты. Двойной клик — обновить сейчас.
 - Прячется, когда открыто полноэкранное приложение (видео, игра).
-- Правый клик — меню: статус, «Обновить», «Поверх всех окон», «Запускать с Windows», «Закрыть».
+- Правый клик — меню: статус, «Обновить», «Поверх всех окон», «Запускать с Windows»,
+  «Автор: KOTS-666 — GitHub», «Закрыть».
 
 ## Что нужно
 
@@ -58,10 +61,16 @@ pythonw widget.pyw
 ## English
 
 Tiny Windows taskbar widget that shows your Claude 5-hour and weekly usage limits and
-reset times. Spends no tokens (reads the usage endpoint only). Requires a logged-in
+reset times. Idea and development by [KOTS-666](https://github.com/KOTS-666), built with Claude.
+Spends no tokens (reads the usage endpoint only). Requires a logged-in
 Claude Code. Download `ClaudeUsageWidget.exe` from Releases, or run `pythonw widget.pyw`.
 Unofficial, not affiliated with Anthropic.
 
+## Автор
+
+[KOTS-666](https://github.com/KOTS-666) — идея, постановка задачи и разработка. Код написан
+вместе с Claude. Понравилось — поставь ⭐ репозиторию.
+
 ## Лицензия
 
-MIT
+MIT © KOTS-666

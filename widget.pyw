@@ -56,6 +56,8 @@ user32.FindWindowExW.restype = wt.HWND
 user32.GetForegroundWindow.restype = wt.HWND
 user32.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
 user32.GetClassNameW.argtypes = (wt.HWND, wt.LPWSTR, ctypes.c_int)
+user32.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
+user32.IsWindowVisible.argtypes = (wt.HWND,)
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
 except (AttributeError, OSError):
@@ -146,6 +148,20 @@ def tray_left():
     tray = user32.FindWindowW("Shell_TrayWnd", None)
     r = window_rect(user32.FindWindowExW(tray, None, "TrayNotifyWnd", None)) if tray else None
     return r[0] if r else None
+
+
+def own_menu_open():
+    """True while our right-click menu (a native "#32768" window) is shown.
+    Raising the widget over it would hide menu items, and a click on the
+    widget there would still hit the item underneath (e.g. "Закрыть")."""
+    hwnd = user32.FindWindowW("#32768", None)
+    while hwnd:
+        pid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == os.getpid() and user32.IsWindowVisible(hwnd):
+            return True
+        hwnd = user32.FindWindowExW(None, hwnd, "#32768", None)
+    return False
 
 
 def foreground_is_fullscreen():
@@ -278,7 +294,7 @@ class Widget:
                 self.hidden = False
             if not self.dragging:
                 self.dock(self.pos[0])
-            if self.topmost.get() and not self.dragging:
+            if self.topmost.get() and not self.dragging and not own_menu_open():
                 hwnd = user32.GetParent(self.root.winfo_id())
                 # HWND_TOPMOST, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
                 user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)

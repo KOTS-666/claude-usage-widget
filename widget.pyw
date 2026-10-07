@@ -58,6 +58,16 @@ user32.GetWindowRect.argtypes = (wt.HWND, ctypes.POINTER(wt.RECT))
 user32.GetClassNameW.argtypes = (wt.HWND, wt.LPWSTR, ctypes.c_int)
 user32.GetWindowThreadProcessId.argtypes = (wt.HWND, ctypes.POINTER(wt.DWORD))
 user32.IsWindowVisible.argtypes = (wt.HWND,)
+user32.SetParent.argtypes = (wt.HWND, wt.HWND)
+user32.SetParent.restype = wt.HWND
+# 32-bit user32 has no *LongPtrW exports
+GetWindowLongPtr = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+SetWindowLongPtr = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+GetWindowLongPtr.argtypes = (wt.HWND, ctypes.c_int)
+GetWindowLongPtr.restype = ctypes.c_ssize_t
+SetWindowLongPtr.argtypes = (wt.HWND, ctypes.c_int, ctypes.c_ssize_t)
+SetWindowLongPtr.restype = ctypes.c_ssize_t
+GWL_STYLE, WS_CHILD, WS_POPUP = -16, 0x40000000, 0x80000000
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)
 except (AttributeError, OSError):
@@ -188,6 +198,8 @@ class Widget:
         self.status = "загрузка…"
         self.dragging = False
         self.hidden = False
+        self.tray = None  # taskbar window we are a child of, see embed()
+        self.closed = False  # the user chose "Закрыть"
         self.results = queue.Queue()
         self.pos = None  # (x, y) we placed the window at
         self.busy = False  # a request is in flight
@@ -260,10 +272,51 @@ class Widget:
         y = tb[1] + (tb[3] - tb[1] - self.H) // 2
         if (x, y) != self.pos:
             self.pos = (x, y)
+            self.place()
+
+    def place(self):
+        x, y = self.pos
+        if self.tray:  # a child window is positioned relative to its parent
+            tb = taskbar_rect()
+            # HWND_TOP (above the taskbar's own children), SWP_NOSIZE | SWP_NOACTIVATE
+            user32.SetWindowPos(self.hwnd(), 0, x - tb[0], y - tb[1], 0, 0, 0x1 | 0x10)
+        else:
             self.root.geometry(f"+{x}+{y}")
 
+    def hwnd(self):
+        return user32.GetParent(self.root.winfo_id())
+
+    def embed(self):
+        """Become a child window of the taskbar. Windows moves the taskbar to a
+        higher z-order band (with the Start menu, sometimes for good) where it
+        covers any top-level window, topmost or not; a child is always drawn.
+        Returns False if there is no taskbar to embed into."""
+        tray = user32.FindWindowW("Shell_TrayWnd", None)
+        hwnd = self.hwnd()
+        if not tray or not hwnd:
+            return False
+        style = GetWindowLongPtr(hwnd, GWL_STYLE)
+        SetWindowLongPtr(hwnd, GWL_STYLE, (style & ~WS_POPUP) | WS_CHILD)
+        if not user32.SetParent(hwnd, tray):
+            SetWindowLongPtr(hwnd, GWL_STYLE, style)
+            return False
+        self.tray = tray
+        self.place()
+        return True
+
+    def detach(self):
+        """Back to an ordinary top-level window."""
+        hwnd = self.hwnd()
+        user32.SetParent(hwnd, None)
+        style = GetWindowLongPtr(hwnd, GWL_STYLE)
+        SetWindowLongPtr(hwnd, GWL_STYLE, (style & ~WS_CHILD) | WS_POPUP)
+        self.tray = None
+        # Tk still believes it is at self.pos and would skip the move
+        # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
+        user32.SetWindowPos(hwnd, None, *self.pos, 0, 0, 0x1 | 0x4 | 0x10)
+
     def drag_start(self, e):
-        self._dx = e.x
+        self._dx = e.x_root - self.pos[0]
         self.dragging = True
 
     def drag_move(self, e):
@@ -278,13 +331,25 @@ class Widget:
         self.menu.tk_popup(e.x_root, e.y_root)
 
     def toggle_topmost(self):
-        self.root.attributes("-topmost", self.topmost.get())
+        if self.tray and not self.topmost.get():
+            self.detach()
+        self.root.attributes("-topmost", self.topmost.get())  # embedded on the next keep_on_top
         self.save_state()
 
     def keep_on_top(self):
-        """Clicking the taskbar raises it over us; push ourselves back on top.
+        """Stay visible over the taskbar: as its child window (see embed), or,
+        if that fails, by pushing ourselves back on top after it is clicked.
         Hide while a fullscreen app (video, game) is in front."""
-        if foreground_is_fullscreen():
+        if self.tray and not self.hwnd():
+            # Explorer restarted and destroyed our window with its taskbar;
+            # leave mainloop, a new widget is created below
+            self.root.destroy()
+            return
+        if self.tray:  # the taskbar goes behind fullscreen apps and takes us along
+            if not self.dragging:
+                self.dock(self.pos[0])
+                self.place()
+        elif foreground_is_fullscreen():
             if not self.hidden:
                 self.root.withdraw()
                 self.hidden = True
@@ -294,10 +359,10 @@ class Widget:
                 self.hidden = False
             if not self.dragging:
                 self.dock(self.pos[0])
-            if self.topmost.get() and not self.dragging and not own_menu_open():
-                hwnd = user32.GetParent(self.root.winfo_id())
+            if (self.topmost.get() and not self.dragging and not self.embed()
+                    and not own_menu_open()):
                 # HWND_TOPMOST, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
-                user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)
+                user32.SetWindowPos(self.hwnd(), -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)
         self.root.after(1000, self.keep_on_top)
 
     def toggle_autostart(self):
@@ -314,6 +379,7 @@ class Widget:
             os.remove(STARTUP_VBS)
 
     def quit(self):
+        self.closed = True
         self.save_state()
         self.root.destroy()
 
@@ -405,4 +471,8 @@ if __name__ == "__main__":
     _mutex = kernel32.CreateMutexW(None, False, r"Local\claude_usage_widget")
     if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
         sys.exit(0)
-    Widget().run()
+    while True:
+        widget = Widget()
+        widget.run()
+        if widget.closed:
+            break

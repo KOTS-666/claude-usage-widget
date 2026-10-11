@@ -123,7 +123,9 @@ def fetch_usage():
         "User-Agent": "claude-usage-widget",
     })
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        # a new opener each time: urlopen() keeps the proxy settings of its first
+        # call, so a VPN/proxy turned on after we started would never be used
+        with urllib.request.build_opener().open(req, timeout=15) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 401:

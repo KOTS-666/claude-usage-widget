@@ -220,9 +220,6 @@ class Widget:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label=self.status, state="disabled")
         self.menu.add_command(label="Обновить", command=self.refresh)
-        self.topmost = tk.BooleanVar(value=True)
-        self.menu.add_checkbutton(label="Поверх всех окон", variable=self.topmost,
-                                  command=self.toggle_topmost)
         self.autostart = tk.BooleanVar(value=os.path.exists(STARTUP_VBS))
         self.menu.add_checkbutton(label="Запускать с Windows", variable=self.autostart,
                                   command=self.toggle_autostart)
@@ -249,9 +246,7 @@ class Widget:
         try:
             with open(STATE, encoding="utf-8") as f:
                 s = json.load(f)
-            x = s["x"]
-            self.topmost.set(s.get("topmost", True))
-            self.root.attributes("-topmost", self.topmost.get())
+            x = s["x"]  # an old "topmost" key is ignored: the widget is always on top
         except (OSError, ValueError, KeyError):
             pass
         if x is None:
@@ -262,7 +257,7 @@ class Widget:
     def save_state(self):
         try:
             with open(STATE, "w", encoding="utf-8") as f:
-                json.dump({"x": self.pos[0], "topmost": self.topmost.get()}, f)
+                json.dump({"x": self.pos[0]}, f)
         except OSError:
             pass
 
@@ -306,17 +301,6 @@ class Widget:
         self.place()
         return True
 
-    def detach(self):
-        """Back to an ordinary top-level window."""
-        hwnd = self.hwnd()
-        user32.SetParent(hwnd, None)
-        style = GetWindowLongPtr(hwnd, GWL_STYLE)
-        SetWindowLongPtr(hwnd, GWL_STYLE, (style & ~WS_CHILD) | WS_POPUP)
-        self.tray = None
-        # Tk still believes it is at self.pos and would skip the move
-        # SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
-        user32.SetWindowPos(hwnd, None, *self.pos, 0, 0, 0x1 | 0x4 | 0x10)
-
     def drag_start(self, e):
         self._dx = e.x_root - self.pos[0]
         self.dragging = True
@@ -331,12 +315,6 @@ class Widget:
     def show_menu(self, e):
         self.menu.entryconfig(0, label=self.status)
         self.menu.tk_popup(e.x_root, e.y_root)
-
-    def toggle_topmost(self):
-        if self.tray and not self.topmost.get():
-            self.detach()
-        self.root.attributes("-topmost", self.topmost.get())  # embedded on the next keep_on_top
-        self.save_state()
 
     def keep_on_top(self):
         """Stay visible over the taskbar: as its child window (see embed), or,
@@ -361,8 +339,7 @@ class Widget:
                 self.hidden = False
             if not self.dragging:
                 self.dock(self.pos[0])
-            if (self.topmost.get() and not self.dragging and not self.embed()
-                    and not own_menu_open()):
+            if not self.dragging and not self.embed() and not own_menu_open():
                 # HWND_TOPMOST, SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
                 user32.SetWindowPos(self.hwnd(), -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10)
         self.root.after(1000, self.keep_on_top)
